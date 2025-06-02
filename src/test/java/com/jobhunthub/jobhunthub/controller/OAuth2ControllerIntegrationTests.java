@@ -14,8 +14,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.transaction.annotation.Transactional;
@@ -236,119 +236,40 @@ public class OAuth2ControllerIntegrationTests {
     // === LINK PROVIDER TESTS ===
 
     @Test
-    public void linkProvider_successfullyLinksGithub_whenUserHasOnlyGoogle() throws Exception {
+    public void initiateProviderLinking_redirectsToGithubOAuth_whenValidProvider() throws Exception {
         mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "github")
-                        .param("providerId", "newgithub123")
+                .perform(get("/api/auth/link/github")
                         .with(oauth2Login().oauth2User(googleOnlyPrincipal)))
                 .andDo(print())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.authenticated").value(true))
-                .andExpect(jsonPath("$.githubLinked").value(true))
-                .andExpect(jsonPath("$.googleLinked").value(true));
+                .andExpect(status().is3xxRedirection())
+                .andExpect(MockMvcResultMatchers.header().string("Location", "/oauth2/authorization/github?state=link"));
     }
 
     @Test
-    public void linkProvider_successfullyLinksGoogle_whenUserHasOnlyGithub() throws Exception {
+    public void initiateProviderLinking_redirectsToGoogleOAuth_whenValidProvider() throws Exception {
         mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "google")
-                        .param("providerId", "newgoogle123")
+                .perform(get("/api/auth/link/google")
                         .with(oauth2Login().oauth2User(githubOnlyPrincipal)))
                 .andDo(print())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.authenticated").value(true))
-                .andExpect(jsonPath("$.githubLinked").value(true))
-                .andExpect(jsonPath("$.googleLinked").value(true));
+                .andExpect(status().is3xxRedirection())
+                .andExpect(MockMvcResultMatchers.header().string("Location", "/oauth2/authorization/google?state=link"));
     }
 
     @Test
-    public void linkProvider_allowsRelinkingSameProvider_whenAlreadyLinked() throws Exception {
+    public void initiateProviderLinking_returnsBadRequest_whenUnsupportedProvider() throws Exception {
         mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "github")
-                        .param("providerId", "github123") // Same ID as existing
+                .perform(get("/api/auth/link/facebook")
                         .with(oauth2Login().oauth2User(githubOnlyPrincipal)))
                 .andDo(print())
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.authenticated").value(true))
-                .andExpect(jsonPath("$.githubLinked").value(true))
-                .andExpect(jsonPath("$.googleLinked").value(false));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$").value("Unsupported provider: facebook"));
     }
 
     @Test
-    public void linkProvider_returnsBadRequest_whenProviderAlreadyLinkedToAnotherUser() throws Exception {
-        // Try to link github123 (already used by githubOnlyPrincipal) to googleOnlyPrincipal
+    public void initiateProviderLinking_returnsRedirect_whenNotLoggedIn() throws Exception {
         mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "github")
-                        .param("providerId", "github123") // Already used by another user
-                        .with(oauth2Login().oauth2User(googleOnlyPrincipal)))
+                .perform(get("/api/auth/link/github"))
                 .andDo(print())
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    public void linkProvider_returnsBadRequest_whenUnsupportedProvider() throws Exception {
-        mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "facebook")
-                        .param("providerId", "facebook123")
-                        .with(oauth2Login().oauth2User(githubOnlyPrincipal)))
-                .andDo(print())
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    public void linkProvider_requiresAuthentication_whenNotLoggedIn() throws Exception {
-        mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "github")
-                        .param("providerId", "github789"))
-                .andDo(print())
-                .andExpect(status().isFound()); // 302 redirect to login
-    }
-
-    @Test
-    public void linkProvider_returnsBadRequest_whenMissingProvider() throws Exception {
-        mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("providerId", "github789")
-                        .with(oauth2Login().oauth2User(githubOnlyPrincipal)))
-                .andDo(print())
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    public void linkProvider_returnsBadRequest_whenMissingProviderId() throws Exception {
-        mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "github")
-                        .with(oauth2Login().oauth2User(githubOnlyPrincipal)))
-                .andDo(print())
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    public void linkProvider_returnsBadRequest_whenEmptyProvider() throws Exception {
-        mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "")
-                        .param("providerId", "github789")
-                        .with(oauth2Login().oauth2User(githubOnlyPrincipal)))
-                .andDo(print())
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    public void linkProvider_returnsBadRequest_whenEmptyProviderId() throws Exception {
-        mockMvc
-                .perform(post("/api/auth/link-provider")
-                        .param("provider", "github")
-                        .param("providerId", "")
-                        .with(oauth2Login().oauth2User(githubOnlyPrincipal)))
-                .andDo(print())
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isFound());
     }
 }

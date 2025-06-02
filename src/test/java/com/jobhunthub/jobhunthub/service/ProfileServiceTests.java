@@ -197,6 +197,34 @@ public class ProfileServiceTests {
          .hasMessageContaining("Profile not found with user: '1'");
     }
 
+    // === PROFILE EXISTS TESTS ===
+
+    @Test
+    public void profileExists_returnsTrue_whenProfileExists() {
+        // Arrange
+        when(profileRepository.findByUser(user)).thenReturn(Optional.of(profile));
+
+        // Act
+        boolean result = profileService.profileExists(user);
+
+        // Assert
+        Assertions.assertThat(result).isTrue();
+        verify(profileRepository).findByUser(user);
+    }
+
+    @Test
+    public void profileExists_returnsFalse_whenProfileDoesNotExist() {
+        // Arrange
+        when(profileRepository.findByUser(user)).thenReturn(Optional.empty());
+
+        // Act
+        boolean result = profileService.profileExists(user);
+
+        // Assert
+        Assertions.assertThat(result).isFalse();
+        verify(profileRepository).findByUser(user);
+    }
+
     // === UPDATE PROFILE TESTS ===
 
     @Test

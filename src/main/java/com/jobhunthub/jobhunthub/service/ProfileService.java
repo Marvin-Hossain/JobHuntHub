@@ -94,4 +94,8 @@ public class ProfileService {
         Profile savedProfile = profileRepository.save(profile);
         return ProfileDTO.fromEntity(savedProfile);
     }
+
+    public boolean profileExists(User user) {
+        return profileRepository.findByUser(user).isPresent();
+    }
 }

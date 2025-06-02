@@ -1,13 +1,9 @@
 package com.jobhunthub.jobhunthub.service;
 
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.jobhunthub.jobhunthub.config.UserPrincipal;
 import com.jobhunthub.jobhunthub.dto.AuthenticatedUserDTO;
 import com.jobhunthub.jobhunthub.dto.OAuth2UserAttributes;
 import com.jobhunthub.jobhunthub.exception.GlobalExceptionHandler.InvalidRequestException;
@@ -31,23 +27,11 @@ public class UserService {
     // AUTHENTICATION OPERATIONS
 
     /**
-     * Authenticate a user based on OAuth2/OIDC attributes.
+     * Authenticate a user based on OAuth2/OIDC attributes (initial login only).
      */
     @Transactional
     public User authenticateUser(OAuth2User oauth2User, String provider) {
         var attrs = OAuth2UserAttributes.from(oauth2User, provider);
-
-        // Check if linking to existing session
-        Authentication current = SecurityContextHolder.getContext().getAuthentication();
-        if (current instanceof OAuth2AuthenticationToken token
-                && token.isAuthenticated()
-                && token.getPrincipal() instanceof UserPrincipal up) {
-            User currentUser = up.getDomainUser();
-            linkProvider(currentUser, attrs.providerId(), provider);
-            userRepository.save(currentUser);
-            profileService.linkProviderEmail(currentUser, attrs, provider);
-            return currentUser;
-        }
 
         // Try to find existing user
         User user = findUserByProvider(attrs.providerId(), provider);
@@ -59,16 +43,27 @@ public class UserService {
         return createNewUser(attrs, provider);
     }
 
-    // Link a provider to a user's account
+    /**
+     * Link a provider to a specific user (pure business logic).
+     */
     @Transactional
-    public AuthenticatedUserDTO linkProvider(User user, String providerId, String provider) {
-        validateProviderNotLinked(providerId, provider, user.getId());
-        setProviderOnUser(user, providerId, provider);
+    public User linkProviderToUser(User user, OAuth2User oauth2User, String provider) {
+        var attrs = OAuth2UserAttributes.from(oauth2User, provider);
         
-        // Return updated DTO after linking
-        return getAuthenticatedUserDTO(user);
+        // 1. Link provider ID to user (validates uniqueness)
+        validateProviderNotLinked(attrs.providerId(), provider, user.getId());
+        setProviderOnUser(user, attrs.providerId(), provider);
+        
+        // 2. Ensure profile exists before linking email
+        if (!profileService.profileExists(user)) {
+            profileService.provisionProfile(user, attrs);
+        }
+        
+        // 3. Link provider email to profile
+        profileService.linkProviderEmail(user, attrs, provider);
+        
+        return userRepository.save(user);
     }
-
 
     // Get authentication status DTO for a user
     public AuthenticatedUserDTO getAuthenticatedUserDTO(User user) {
@@ -81,7 +76,7 @@ public class UserService {
 
     // Find a user by provider ID and provider
     private User findUserByProvider(String providerId, String provider) {
-        return switch(provider.toLowerCase()) {
+        return switch(provider) {
             case "github" -> userRepository.findByGithubId(providerId).orElse(null);
             case "google" -> userRepository.findByGoogleId(providerId).orElse(null);
             default -> throw new IllegalArgumentException("Unsupported provider: " + provider);
@@ -110,7 +105,7 @@ public class UserService {
 
     // Set a provider on a user
     private void setProviderOnUser(User user, String providerId, String provider) {
-        switch (provider.toLowerCase()) {
+        switch (provider) {
             case "github" -> user.setGithubId(providerId);
             case "google" -> user.setGoogleId(providerId);
             default -> throw new IllegalArgumentException("Unsupported provider: " + provider);
